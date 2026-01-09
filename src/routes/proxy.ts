@@ -111,7 +111,7 @@ async function handleCompletion(
   try {
     const result = await client.chatCompletion(request, authHeader);
 
-    setShieldHeaders(c, decision);
+    setPasteGuardHeaders(c, decision);
 
     if (result.isStreaming) {
       return handleStreamingResponse(c, result, decision, startTime, maskedContent, maskingConfig);
@@ -128,7 +128,7 @@ async function handleCompletion(
 /**
  * Set X-PasteGuard response headers
  */
-function setShieldHeaders(c: Context, decision: RoutingDecision) {
+function setPasteGuardHeaders(c: Context, decision: RoutingDecision) {
   c.header("X-PasteGuard-Mode", decision.mode);
   c.header("X-PasteGuard-Provider", decision.provider);
   c.header("X-PasteGuard-PII-Detected", decision.piiResult.hasPII.toString());
