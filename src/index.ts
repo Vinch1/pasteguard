@@ -96,10 +96,10 @@ async function validateStartup() {
   // Validate secrets detection configuration
   if (config.secrets_detection.action === "route_local" && config.mode === "mask") {
     console.error("\n❌ Configuration error detected!\n");
+    console.error("   secrets_detection.action 'route_local' is not compatible with mode 'mask'.");
     console.error(
-      "   secrets_detection.action 'route_local' is not compatible with mode 'mask'.",
+      "   Use mode 'route' or change secrets_detection.action to 'block' or 'redact'.\n",
     );
-    console.error("   Use mode 'route' or change secrets_detection.action to 'block' or 'redact'.\n");
     console.error("[STARTUP] ✗ Invalid configuration. Exiting for safety.");
     process.exit(1);
   }
