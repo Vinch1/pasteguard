@@ -32,7 +32,7 @@ export interface Stats {
   total_requests: number;
   pii_requests: number;
   pii_percentage: number;
-  openai_requests: number;
+  proxy_requests: number;
   local_requests: number;
   api_requests: number;
   avg_scan_time_ms: number;
@@ -170,9 +170,11 @@ export class Logger {
       .prepare(`SELECT COUNT(*) as count FROM request_logs WHERE pii_detected = 1`)
       .get() as { count: number };
 
-    // Upstream vs Local vs API
-    const openaiResult = this.db
-      .prepare(`SELECT COUNT(*) as count FROM request_logs WHERE provider = 'openai'`)
+    // Proxy (OpenAI + Anthropic) vs Local vs API
+    const proxyResult = this.db
+      .prepare(
+        `SELECT COUNT(*) as count FROM request_logs WHERE provider IN ('openai', 'anthropic')`,
+      )
       .get() as { count: number };
     const localResult = this.db
       .prepare(`SELECT COUNT(*) as count FROM request_logs WHERE provider = 'local'`)
@@ -210,7 +212,7 @@ export class Logger {
       total_requests: total,
       pii_requests: pii,
       pii_percentage: total > 0 ? Math.round((pii / total) * 100 * 10) / 10 : 0,
-      openai_requests: openaiResult.count,
+      proxy_requests: proxyResult.count,
       local_requests: localResult.count,
       api_requests: apiResult.count,
       avg_scan_time_ms: Math.round(scanTimeResult.avg || 0),

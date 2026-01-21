@@ -8,23 +8,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { getConfig, type SecretsDetectionConfig } from "../config";
-import { resolveConflicts, resolveOverlaps } from "../masking/conflict-resolver";
-import {
-  createPlaceholderContext,
-  incrementAndGenerate,
-  type PlaceholderContext,
-  replaceWithPlaceholders,
-} from "../masking/context";
-import {
-  generatePlaceholder as generatePlaceholderFromFormat,
-  generateSecretPlaceholder,
-  PII_PLACEHOLDER_FORMAT,
-} from "../masking/placeholders";
-import type { PIIEntity } from "../pii/detect";
+import { createPlaceholderContext, type PlaceholderContext } from "../masking/context";
 import { getPIIDetector } from "../pii/detect";
-import { detectSecrets, type SecretLocation } from "../secrets/detect";
+import { mask as maskPII } from "../pii/mask";
+import { detectSecrets } from "../secrets/detect";
+import { maskSecrets } from "../secrets/mask";
 import { getLanguageDetector, type SupportedLanguage } from "../services/language-detector";
 import { logRequest } from "../services/logger";
+import { createLogData } from "./utils";
 
 export const apiRoutes = new Hono();
 
@@ -53,79 +44,27 @@ interface MaskResponse {
 }
 
 /**
- * Generates a PII placeholder
+ * Extracts entities from context by comparing counters before/after masking
  */
-function generatePIIPlaceholder(entityType: string, context: PlaceholderContext): string {
-  return incrementAndGenerate(entityType, context, (type, count) =>
-    generatePlaceholderFromFormat(PII_PLACEHOLDER_FORMAT, type, count),
-  );
-}
-
-/**
- * Generates a secrets placeholder
- */
-function generateSecretsPlaceholder(secretType: string, context: PlaceholderContext): string {
-  return incrementAndGenerate(secretType, context, generateSecretPlaceholder);
-}
-
-/**
- * Masks text with PII entities
- */
-function maskWithPII(
-  text: string,
-  entities: PIIEntity[],
+function extractEntities(
+  countersBefore: Record<string, number>,
   context: PlaceholderContext,
-): { masked: string; entities: MaskEntity[] } {
-  if (entities.length === 0) {
-    return { masked: text, entities: [] };
+): MaskEntity[] {
+  const entities: MaskEntity[] = [];
+
+  for (const [type, count] of Object.entries(context.counters)) {
+    const startCount = countersBefore[type] || 0;
+    // Add entities for each new placeholder created
+    for (let i = startCount + 1; i <= count; i++) {
+      // Find the placeholder in the mapping
+      const placeholder = Object.keys(context.mapping).find((p) => p.includes(`${type}_${i}]`));
+      if (placeholder) {
+        entities.push({ type, placeholder });
+      }
+    }
   }
 
-  const maskEntities: MaskEntity[] = [];
-
-  const masked = replaceWithPlaceholders(
-    text,
-    entities,
-    context,
-    (e) => e.entity_type,
-    (type, ctx) => {
-      const placeholder = generatePIIPlaceholder(type, ctx);
-      maskEntities.push({ type, placeholder });
-      return placeholder;
-    },
-    resolveConflicts,
-  );
-
-  return { masked, entities: maskEntities };
-}
-
-/**
- * Masks text with secret locations
- */
-function maskWithSecrets(
-  text: string,
-  locations: SecretLocation[],
-  context: PlaceholderContext,
-): { masked: string; entities: MaskEntity[] } {
-  if (locations.length === 0) {
-    return { masked: text, entities: [] };
-  }
-
-  const maskEntities: MaskEntity[] = [];
-
-  const masked = replaceWithPlaceholders(
-    text,
-    locations,
-    context,
-    (loc) => loc.type,
-    (type, ctx) => {
-      const placeholder = generateSecretsPlaceholder(type, ctx);
-      maskEntities.push({ type, placeholder });
-      return placeholder;
-    },
-    resolveOverlaps,
-  );
-
-  return { masked, entities: maskEntities };
+  return entities;
 }
 
 /**
@@ -208,9 +147,11 @@ apiRoutes.post("/mask", async (c) => {
         );
       });
 
-      const piiResult = maskWithPII(maskedText, filteredEntities, context);
+      // Capture counters before masking to track new entities
+      const countersBefore = { ...context.counters };
+      const piiResult = maskPII(maskedText, filteredEntities, context);
       maskedText = piiResult.masked;
-      allEntities.push(...piiResult.entities);
+      allEntities.push(...extractEntities(countersBefore, piiResult.context));
 
       // Collect unique entity types for logging
       for (const entity of filteredEntities) {
@@ -221,20 +162,14 @@ apiRoutes.post("/mask", async (c) => {
     } catch (error) {
       // Log the error
       logRequest(
-        {
-          timestamp: new Date().toISOString(),
-          mode: "mask",
+        createLogData({
           provider: "api",
           model: "mask",
-          piiDetected: false,
-          entities: [],
-          latencyMs: Date.now() - startTime,
-          scanTimeMs: 0,
-          language,
-          languageFallback,
+          startTime,
+          pii: { hasPII: false, entityTypes: [], language, languageFallback, scanTimeMs: 0 },
           statusCode: 503,
           errorMessage: error instanceof Error ? error.message : "PII detection failed",
-        },
+        }),
         userAgent,
       );
 
@@ -266,9 +201,11 @@ apiRoutes.post("/mask", async (c) => {
       const secretsResult = detectSecrets(maskedText, secretsConfig);
 
       if (secretsResult.locations && secretsResult.locations.length > 0) {
-        const secretsMaskResult = maskWithSecrets(maskedText, secretsResult.locations, context);
+        // Capture counters before masking to track new entities
+        const countersBefore = { ...context.counters };
+        const secretsMaskResult = maskSecrets(maskedText, secretsResult.locations, context);
         maskedText = secretsMaskResult.masked;
-        allEntities.push(...secretsMaskResult.entities);
+        allEntities.push(...extractEntities(countersBefore, secretsMaskResult.context));
 
         // Collect unique secret types for logging
         for (const match of secretsResult.matches) {
@@ -280,20 +217,20 @@ apiRoutes.post("/mask", async (c) => {
     } catch (error) {
       // Log the error
       logRequest(
-        {
-          timestamp: new Date().toISOString(),
-          mode: "mask",
+        createLogData({
           provider: "api",
           model: "mask",
-          piiDetected: piiEntityTypes.length > 0,
-          entities: piiEntityTypes,
-          latencyMs: Date.now() - startTime,
-          scanTimeMs,
-          language,
-          languageFallback,
+          startTime,
+          pii: {
+            hasPII: piiEntityTypes.length > 0,
+            entityTypes: piiEntityTypes,
+            language,
+            languageFallback,
+            scanTimeMs,
+          },
           statusCode: 503,
           errorMessage: error instanceof Error ? error.message : "Secrets detection failed",
-        },
+        }),
         userAgent,
       );
 
@@ -312,22 +249,22 @@ apiRoutes.post("/mask", async (c) => {
 
   // Log successful request
   logRequest(
-    {
-      timestamp: new Date().toISOString(),
-      mode: "mask",
+    createLogData({
       provider: "api",
       model: "mask",
-      piiDetected: piiEntityTypes.length > 0,
-      entities: piiEntityTypes,
-      latencyMs: Date.now() - startTime,
-      scanTimeMs,
-      language,
-      languageFallback,
+      startTime,
+      pii: {
+        hasPII: piiEntityTypes.length > 0,
+        entityTypes: piiEntityTypes,
+        language,
+        languageFallback,
+        scanTimeMs,
+      },
+      secrets:
+        secretTypes.length > 0 ? { detected: true, types: secretTypes, masked: true } : undefined,
       maskedContent: config.logging.log_masked_content ? maskedText : undefined,
-      secretsDetected: secretTypes.length > 0,
-      secretsTypes: secretTypes.length > 0 ? secretTypes : undefined,
       statusCode: 200,
-    },
+    }),
     userAgent,
   );
 

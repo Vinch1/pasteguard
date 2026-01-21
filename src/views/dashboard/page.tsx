@@ -258,9 +258,9 @@ const StatsGrid: FC = () => (
 		<StatCard label="Avg PII Scan" valueId="avg-scan" accent="teal" />
 		<StatCard label="Requests/Hour" valueId="requests-hour" />
 		<StatCard
-			id="openai-card"
-			label="OpenAI"
-			valueId="openai-requests"
+			id="proxy-card"
+			label="Proxy"
+			valueId="proxy-requests"
 			accent="info"
 			routeOnly
 		/>
@@ -463,15 +463,15 @@ async function fetchStats() {
     }
 
     if (data.mode === 'route') {
-      document.getElementById('openai-requests').textContent = data.openai_requests.toLocaleString();
+      document.getElementById('proxy-requests').textContent = data.proxy_requests.toLocaleString();
       document.getElementById('local-requests').textContent = data.local_requests.toLocaleString();
 
-      const total = data.openai_requests + data.local_requests;
-      const openaiPct = total > 0 ? Math.round((data.openai_requests / total) * 100) : 50;
-      const localPct = 100 - openaiPct;
+      const total = data.proxy_requests + data.local_requests;
+      const proxyPct = total > 0 ? Math.round((data.proxy_requests / total) * 100) : 50;
+      const localPct = 100 - proxyPct;
 
       document.getElementById('provider-split').innerHTML =
-        '<div class="flex items-center justify-center font-mono text-[0.7rem] font-medium text-white bg-info min-w-[48px] transition-all" style="width:' + Math.max(openaiPct, 10) + '%">' + openaiPct + '%</div>' +
+        '<div class="flex items-center justify-center font-mono text-[0.7rem] font-medium text-white bg-info min-w-[48px] transition-all" style="width:' + Math.max(proxyPct, 10) + '%">' + proxyPct + '%</div>' +
         '<div class="flex items-center justify-center font-mono text-[0.7rem] font-medium text-white bg-success min-w-[48px] transition-all" style="width:' + Math.max(localPct, 10) + '%">' + localPct + '%</div>';
     }
 
