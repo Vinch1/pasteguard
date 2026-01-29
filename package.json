@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "bun run --hot src/index.ts",
+    "dev": "node scripts/setup.js",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun --external lightningcss",
     "test": "bun test",

@@ -15,7 +15,7 @@ const LocalProviderSchema = z.object({
 
 // Providers - OpenAI-compatible endpoints (cloud or self-hosted)
 const OpenAIProviderSchema = z.object({
-  base_url: z.string().url().default("https://api.openai.com/v1"),
+  base_url: z.string().url().default("https://openrouter.ai/api/v1"),
   api_key: z.string().optional(), // Optional fallback if client doesn't send auth header
 });
 

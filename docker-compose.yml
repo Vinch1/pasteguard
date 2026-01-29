@@ -50,3 +50,21 @@ services:
     healthcheck:
       disable: true
     restart: unless-stopped
+
+  # Presidio Analyzer - PII detection service
+  presidio-analyzer:
+    image: ghcr.io/sgasser/pasteguard:${PASTEGUARD_TAG:-en}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        LANGUAGES: ${LANGUAGES:-en}
+    ports:
+      - "5002:5002"
+    environment:
+      - START_APP=false
+      - PORT=5002
+      - WORKERS=1
+    healthcheck:
+      disable: true
+    restart: unless-stopped

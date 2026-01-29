@@ -64,7 +64,7 @@ Open source (Apache 2.0). Built in public — early feedback shapes the product.
 ## Quick Start
 
 ```bash
-docker run --rm -p 3000:3000 ghcr.io/sgasser/pasteguard:en
+npm run dev
 ```
 
 Point your app to PasteGuard:
