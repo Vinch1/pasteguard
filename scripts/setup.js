@@ -36,6 +36,80 @@ async function installBun() {
   }
 }
 
+async function installChocolatey() {
+  console.log("📦 Chocolatey not found. Installing...\n");
+
+  const installCmd =
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\'))"';
+
+  try {
+    execSync(installCmd, { stdio: "inherit" });
+    console.log("\n✓ Chocolatey installed successfully!\n");
+  } catch (error) {
+    console.error("✗ Failed to install Chocolatey. Please install manually:");
+    console.error("  https://chocolatey.org/install\n");
+    process.exit(1);
+  }
+}
+
+async function installPodman() {
+  console.log("📦 Podman not found. Installing...\n");
+
+  let installCmd;
+  const osType = process.platform;
+
+  if (osType === "win32") {
+    // Windows: Ensure Chocolatey is installed first
+    if (!checkCommandExists("choco")) {
+      await installChocolatey();
+    }
+    // Windows: Use Chocolatey to install Podman Desktop
+    installCmd = 'powershell -c "choco install podman-desktop -y"';
+  } else if (osType === "darwin") {
+    // macOS: Use Homebrew
+    installCmd = "brew install podman";
+  } else {
+    // Linux: Use package manager
+    const linuxDistro = await detectLinuxDistro();
+    if (linuxDistro.includes("ubuntu") || linuxDistro.includes("debian")) {
+      installCmd = "sudo apt-get update && sudo apt-get install -y podman";
+    } else if (linuxDistro.includes("fedora") || linuxDistro.includes("rhel")) {
+      installCmd = "sudo dnf install -y podman";
+    } else if (linuxDistro.includes("arch")) {
+      installCmd = "sudo pacman -S podman";
+    } else {
+      // Fallback to generic installation instructions
+      showPodmanInstallationInstructions();
+      return;
+    }
+  }
+
+  try {
+    execSync(installCmd, { stdio: "inherit" });
+    console.log("\n✓ Podman installed successfully!\n");
+  } catch (error) {
+    console.error("✗ Failed to install Podman. Please install manually:");
+    showPodmanInstallationInstructions();
+    process.exit(1);
+  }
+}
+
+async function detectLinuxDistro() {
+  try {
+    const output = execSync("cat /etc/os-release", { encoding: "utf-8" });
+    return output.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function showPodmanInstallationInstructions() {
+  console.error("\n📖 Installation Instructions:");
+  console.error("  Windows: https://podman.io/docs/installation/windows");
+  console.error("  macOS: https://podman.io/docs/installation/mac");
+  console.error("  Linux: https://podman.io/docs/installation/linux\n");
+}
+
 function startServices() {
   console.log("🚀 Starting services...\n");
 
@@ -72,11 +146,7 @@ async function main() {
 
   // Check Podman
   if (!checkCommandExists("podman")) {
-    console.error(
-      "\n✗ Podman not found. Please install Podman:"
-    );
-    console.error("  https://podman.io/docs/installation\n");
-    process.exit(1);
+    await installPodman();
   } else {
     console.log("✓ Podman found");
   }
